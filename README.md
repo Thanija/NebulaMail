@@ -235,25 +235,19 @@ Author
 Thanija J P
 
 Nebula Mail was developed as an engineering project demonstrating Gmail API integration, AI-assisted UI interactions, React frontend development, and Node.js backend development.
-
 ## Screenshots
 
 ### Real Gmail Inbox
-
-![Nebula Mail Inbox](screenshots/inbox.png.jpeg)
+![Nebula Mail Inbox](./screenshots/inbox.png)
 
 ### Email Details
-
-![Email Details](screenshots/email%20detail.png.jpeg)
+![Email Details](./screenshots/email%20detail.png)
 
 ### AI Compose
-
-![AI Compose](screenshots/AI%20Compose.png.jpeg)
+![AI Compose](./screenshots/AI%20Compose.png)
 
 ### AI Search
-
-![AI Search](screenshots/AI%20Search.png.jpeg)
+![AI Search](./screenshots/AI%20Search.png)
 
 ### Context-Aware AI Reply
-
-![AI Reply](screenshots/AI%20Reply.png.jpeg)
+![AI Reply](./screenshots/AI%20Reply.png)

@@ -36,12 +36,18 @@ if (fs.existsSync("token.json")) {
   oauth2Client.setCredentials(token);
 }
 
-// Home route
+// --------------------------------------------------
+// HOME
+// --------------------------------------------------
+
 app.get("/", (req, res) => {
   res.send("Nebula Mail Backend is running!");
 });
 
-// Start Google login
+// --------------------------------------------------
+// GOOGLE LOGIN
+// --------------------------------------------------
+
 app.get("/auth/google", (req, res) => {
   const authUrl = oauth2Client.generateAuthUrl({
     access_type: "offline",
@@ -52,7 +58,10 @@ app.get("/auth/google", (req, res) => {
   res.redirect(authUrl);
 });
 
-// Google OAuth callback
+// --------------------------------------------------
+// GOOGLE OAUTH CALLBACK
+// --------------------------------------------------
+
 app.get("/auth/google/callback", async (req, res) => {
   try {
     const { code } = req.query;
@@ -61,19 +70,28 @@ app.get("/auth/google/callback", async (req, res) => {
 
     oauth2Client.setCredentials(tokens);
 
-    fs.writeFileSync("token.json", JSON.stringify(tokens, null, 2));
+    fs.writeFileSync(
+      "token.json",
+      JSON.stringify(tokens, null, 2)
+    );
 
     res.send(`
       <h1>Gmail connected successfully! 🎉</h1>
       <p>You can close this tab and return to Nebula Mail.</p>
     `);
   } catch (error) {
-    console.error(error);
-    res.status(500).send("Google authentication failed.");
+    console.error("Google authentication error:", error);
+
+    res.status(500).send(
+      "Google authentication failed."
+    );
   }
 });
 
-// Get inbox emails
+// --------------------------------------------------
+// GET INBOX EMAILS
+// --------------------------------------------------
+
 app.get("/api/emails", async (req, res) => {
   try {
     const gmail = google.gmail({
@@ -96,122 +114,6 @@ app.get("/api/emails", async (req, res) => {
         userId: "me",
         id: message.id,
         format: "metadata",
-        metadataHeaders: ["From", "Subject", "Date"]
-      });
-
-      const headers = email.data.payload.headers;
-
-      const getHeader = (name) => {
-        const header = headers.find(
-          (h) => h.name.toLowerCase() === name.toLowerCase()
-        );
-
-        return header ? header.value : "";
-      };
-
-     emails.push({
-  id: message.id,
-  from: getHeader("From"),
-  subject: getHeader("Subject"),
-  date: getHeader("Date"),
-  snippet: email.data.snippet,
-  isUnread: email.data.labelIds?.includes("UNREAD") || false
-});
-    }
-
-    res.json(emails);
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({
-      error: "Could not load Gmail messages."
-    });
-  }
-});
-// Filter emails using Gmail search
-app.get("/api/filter-emails", async (req, res) => {
-  try {
-    const {
-      folder = "inbox",
-      filterType,
-      startDate,
-      endDate,
-      searchQuery
-    } = req.query;
-
-    const gmail = google.gmail({
-      version: "v1",
-      auth: oauth2Client
-    });
-
-    let q = "";
-
-    // Date filter
-    if (filterType === "date") {
-      if (!startDate || !endDate) {
-        return res.status(400).json({
-          error: "Start date and end date are required."
-        });
-      }
-
-      const start = new Date(`${startDate}T00:00:00`);
-      const end = new Date(`${endDate}T00:00:00`);
-
-      // Add one day so the end date is included
-      end.setDate(end.getDate() + 1);
-
-      const formatDate = (date) => {
-        return `${date.getFullYear()}/${String(
-          date.getMonth() + 1
-        ).padStart(2, "0")}/${String(
-          date.getDate()
-        ).padStart(2, "0")}`;
-      };
-
-      q = `after:${formatDate(start)} before:${formatDate(end)}`;
-    }
-
-    // Unread filter
-    if (filterType === "unread") {
-      q = "is:unread";
-    }
-
-    // Read filter
-    if (filterType === "read") {
-      q = "is:read";
-    }
-
-    // Sender or keyword search
-    if (filterType === "sender" || filterType === "keyword"||filterType =="search") {
-      if (!searchQuery) {
-        return res.status(400).json({
-          error: "Search query is required."
-        });
-      }
-
-      if (filterType === "sender") {
-  q = `from:${searchQuery}`;
-} else {
-  q = searchQuery;
-}
-    }
-
-    const label = folder === "sent" ? "SENT" : "INBOX";
-
-    const response = await gmail.users.messages.list({
-      userId: "me",
-      labelIds: [label],
-      q: q,
-      maxResults: 50
-    });
-
-    const messages = response.data.messages || [];
-    const emails = [];
-
-    for (const message of messages) {
-      const email = await gmail.users.messages.get({
-        userId: "me",
-        id: message.id,
-        format: "metadata",
         metadataHeaders: [
           "From",
           "To",
@@ -220,11 +122,12 @@ app.get("/api/filter-emails", async (req, res) => {
         ]
       });
 
-      const headers = email.data.payload.headers;
+      const headers = email.data.payload.headers || [];
 
       const getHeader = (name) => {
         const header = headers.find(
-          (h) => h.name.toLowerCase() === name.toLowerCase()
+          (h) =>
+            h.name.toLowerCase() === name.toLowerCase()
         );
 
         return header ? header.value : "";
@@ -245,14 +148,185 @@ app.get("/api/filter-emails", async (req, res) => {
     res.json(emails);
 
   } catch (error) {
-    console.error("Filter emails error:", error);
+    console.error("Inbox error:", error);
 
     res.status(500).json({
-      error: "Could not filter Gmail messages."
+      error: "Could not load Gmail messages."
     });
   }
 });
-// Get the full content of one email
+
+// --------------------------------------------------
+// FILTER / SEARCH EMAILS
+// --------------------------------------------------
+
+app.get("/api/filter-emails", async (req, res) => {
+  try {
+    const {
+      folder = "inbox",
+      filterType,
+      startDate,
+      endDate,
+      searchQuery
+    } = req.query;
+
+    const gmail = google.gmail({
+      version: "v1",
+      auth: oauth2Client
+    });
+
+    let q = "";
+
+    // -----------------------------
+    // DATE FILTER
+    // -----------------------------
+
+    if (filterType === "date") {
+      if (!startDate || !endDate) {
+        return res.status(400).json({
+          error:
+            "Start date and end date are required."
+        });
+      }
+
+      const start = new Date(
+        `${startDate}T00:00:00`
+      );
+
+      const end = new Date(
+        `${endDate}T00:00:00`
+      );
+
+      // Include the complete end date
+      end.setDate(end.getDate() + 1);
+
+      const formatDate = (date) => {
+        return `${date.getFullYear()}/${String(
+          date.getMonth() + 1
+        ).padStart(2, "0")}/${String(
+          date.getDate()
+        ).padStart(2, "0")}`;
+      };
+
+      q = `after:${formatDate(start)} before:${formatDate(end)}`;
+    }
+
+    // -----------------------------
+    // UNREAD
+    // -----------------------------
+
+    if (filterType === "unread") {
+      q = "is:unread";
+    }
+
+    // -----------------------------
+    // READ
+    // -----------------------------
+
+    if (filterType === "read") {
+      q = "is:read";
+    }
+
+    // -----------------------------
+    // SEARCH / SENDER
+    // -----------------------------
+
+    if (
+      filterType === "sender" ||
+      filterType === "keyword" ||
+      filterType === "search"
+    ) {
+      if (!searchQuery) {
+        return res.status(400).json({
+          error: "Search query is required."
+        });
+      }
+
+      if (filterType === "sender") {
+        q = `from:${searchQuery}`;
+      } else {
+        q = searchQuery;
+      }
+    }
+
+    const label =
+      folder === "sent"
+        ? "SENT"
+        : "INBOX";
+
+    const response =
+      await gmail.users.messages.list({
+        userId: "me",
+        labelIds: [label],
+        q: q,
+        maxResults: 50
+      });
+
+    const messages =
+      response.data.messages || [];
+
+    const emails = [];
+
+    for (const message of messages) {
+      const email =
+        await gmail.users.messages.get({
+          userId: "me",
+          id: message.id,
+          format: "metadata",
+          metadataHeaders: [
+            "From",
+            "To",
+            "Subject",
+            "Date"
+          ]
+        });
+
+      const headers =
+        email.data.payload.headers || [];
+
+      const getHeader = (name) => {
+        const header = headers.find(
+          (h) =>
+            h.name.toLowerCase() ===
+            name.toLowerCase()
+        );
+
+        return header ? header.value : "";
+      };
+
+      emails.push({
+        id: message.id,
+        from: getHeader("From"),
+        to: getHeader("To"),
+        subject: getHeader("Subject"),
+        date: getHeader("Date"),
+        snippet: email.data.snippet,
+        isUnread:
+          email.data.labelIds?.includes(
+            "UNREAD"
+          ) || false
+      });
+    }
+
+    res.json(emails);
+
+  } catch (error) {
+    console.error(
+      "Filter emails error:",
+      error
+    );
+
+    res.status(500).json({
+      error:
+        "Could not filter Gmail messages."
+    });
+  }
+});
+
+// --------------------------------------------------
+// GET FULL EMAIL
+// --------------------------------------------------
+
 app.get("/api/emails/:id", async (req, res) => {
   try {
     const gmail = google.gmail({
@@ -260,97 +334,161 @@ app.get("/api/emails/:id", async (req, res) => {
       auth: oauth2Client
     });
 
-    const result = await gmail.users.messages.get({
-      userId: "me",
-      id: req.params.id,
-      format: "full"
-    });
+    const result =
+      await gmail.users.messages.get({
+        userId: "me",
+        id: req.params.id,
+        format: "full"
+      });
 
     const message = result.data;
 
-    // Get email headers
-    const headers = message.payload.headers || [];
+    const headers =
+      message.payload.headers || [];
 
     const getHeader = (name) => {
       const header = headers.find(
-        (h) => h.name.toLowerCase() === name.toLowerCase()
+        (h) =>
+          h.name.toLowerCase() ===
+          name.toLowerCase()
       );
 
       return header ? header.value : "";
     };
 
-    // Decode Gmail's Base64URL format
+    // -----------------------------
+    // DECODE GMAIL BODY
+    // -----------------------------
+
     const decodeBody = (data) => {
       if (!data) return "";
 
       return Buffer.from(
-        data.replace(/-/g, "+").replace(/_/g, "/"),
+        data
+          .replace(/-/g, "+")
+          .replace(/_/g, "/"),
         "base64"
       ).toString("utf-8");
     };
 
-    // Find the email body
-   // Find the email body
-const findBody = (part) => {
-  if (!part) return "";
+    // -----------------------------
+    // CLEAN HTML
+    // -----------------------------
 
-  let bodies = [];
+    const cleanHtml = (html) => {
+      return html
+        .replace(
+          /<style[\s\S]*?<\/style>/gi,
+          ""
+        )
+        .replace(
+          /<script[\s\S]*?<\/script>/gi,
+          ""
+        )
+        .replace(
+          /<br\s*\/?>/gi,
+          "\n"
+        )
+        .replace(
+          /<\/p>/gi,
+          "\n"
+        )
+        .replace(
+          /<div[^>]*>/gi,
+          "\n"
+        )
+        .replace(
+          /<\/div>/gi,
+          ""
+        )
+        .replace(
+          /<[^>]*>/g,
+          ""
+        )
+        .replace(
+          /&nbsp;/gi,
+          " "
+        )
+        .replace(
+          /&amp;/gi,
+          "&"
+        )
+        .replace(
+          /&lt;/gi,
+          "<"
+        )
+        .replace(
+          /&gt;/gi,
+          ">"
+        )
+        .trim();
+    };
 
-  const cleanHtml = (html) => {
-    return html
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n")
-      .replace(/<div[^>]*>/gi, "\n")
-      .replace(/<\/div>/gi, "")
-      .replace(/<[^>]*>/g, "")
-      .replace(/&nbsp;/gi, " ")
-      .replace(/&amp;/gi, "&")
-      .replace(/&lt;/gi, "<")
-      .replace(/&gt;/gi, ">")
-      .trim();
-  };
+    // -----------------------------
+    // FIND EMAIL BODY
+    // -----------------------------
 
-  // HTML body
-  if (
-    part.mimeType === "text/html" &&
-    part.body &&
-    part.body.data
-  ) {
-    bodies.push(cleanHtml(decodeBody(part.body.data)));
-  }
+    const findBody = (part) => {
+      if (!part) return "";
 
-  // Plain text body
-  if (
-    part.mimeType === "text/plain" &&
-    part.body &&
-    part.body.data
-  ) {
-    bodies.push(decodeBody(part.body.data));
-  }
-
-  // Check all child parts
-  if (part.parts) {
-    for (const child of part.parts) {
-      const childBody = findBody(child);
-
-      if (childBody) {
-        bodies.push(childBody);
+      // Prefer HTML
+      if (
+        part.mimeType === "text/html" &&
+        part.body &&
+        part.body.data
+      ) {
+        return cleanHtml(
+          decodeBody(part.body.data)
+        );
       }
-    }
-  }
 
-  // Return the longest body
-  if (bodies.length > 0) {
-    return bodies
-      .filter(Boolean)
-      .sort((a, b) => b.length - a.length)[0];
-  }
+      // Check child parts
+      if (
+        part.parts &&
+        part.parts.length > 0
+      ) {
+        // First search for HTML
+        for (const child of part.parts) {
+          if (
+            child.mimeType ===
+              "text/html" &&
+            child.body &&
+            child.body.data
+          ) {
+            return cleanHtml(
+              decodeBody(
+                child.body.data
+              )
+            );
+          }
+        }
 
-  return "";
-};
-    const body = findBody(message.payload);
+        // Then recursively search
+        for (const child of part.parts) {
+          const body = findBody(child);
+
+          if (body) {
+            return body;
+          }
+        }
+      }
+
+      // Plain text
+      if (
+        part.mimeType === "text/plain" &&
+        part.body &&
+        part.body.data
+      ) {
+        return decodeBody(
+          part.body.data
+        );
+      }
+
+      return "";
+    };
+
+    const body =
+      findBody(message.payload);
 
     res.json({
       id: message.id,
@@ -358,25 +496,41 @@ const findBody = (part) => {
       to: getHeader("To"),
       subject: getHeader("Subject"),
       date: getHeader("Date"),
-      body: body || message.snippet || ""
+      body:
+        body ||
+        message.snippet ||
+        ""
     });
 
   } catch (error) {
-    console.error("Get email error:", error);
+    console.error(
+      "Get email error:",
+      error
+    );
 
     res.status(500).json({
-      error: "Could not load the full email."
+      error:
+        "Could not load the full email."
     });
   }
 });
-// Send an email
+
+// --------------------------------------------------
+// SEND EMAIL
+// --------------------------------------------------
+
 app.post("/api/send", async (req, res) => {
   try {
-    const { to, subject, body } = req.body;
+    const {
+      to,
+      subject,
+      body
+    } = req.body;
 
     if (!to || !subject || !body) {
       return res.status(400).json({
-        error: "To, subject and body are required."
+        error:
+          "To, subject and body are required."
       });
     }
 
@@ -393,18 +547,20 @@ app.post("/api/send", async (req, res) => {
       body
     ].join("\r\n");
 
-    const encodedMessage = Buffer.from(message)
-      .toString("base64")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
+    const encodedMessage =
+      Buffer.from(message)
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_")
+        .replace(/=+$/, "");
 
-    const response = await gmail.users.messages.send({
-      userId: "me",
-      requestBody: {
-        raw: encodedMessage
-      }
-    });
+    const response =
+      await gmail.users.messages.send({
+        userId: "me",
+        requestBody: {
+          raw: encodedMessage
+        }
+      });
 
     res.json({
       success: true,
@@ -412,14 +568,21 @@ app.post("/api/send", async (req, res) => {
     });
 
   } catch (error) {
-    console.error(error);
+    console.error(
+      "Send email error:",
+      error
+    );
 
     res.status(500).json({
       error: "Could not send email."
     });
   }
 });
-// Get sent emails
+
+// --------------------------------------------------
+// GET SENT EMAILS
+// --------------------------------------------------
+
 app.get("/api/sent", async (req, res) => {
   try {
     const gmail = google.gmail({
@@ -427,195 +590,194 @@ app.get("/api/sent", async (req, res) => {
       auth: oauth2Client
     });
 
-    const response = await gmail.users.messages.list({
-      userId: "me",
-      labelIds: ["SENT"],
-      maxResults: 20
-    });
+    const response =
+      await gmail.users.messages.list({
+        userId: "me",
+        labelIds: ["SENT"],
+        maxResults: 20
+      });
 
-    const messages = response.data.messages || [];
+    const messages =
+      response.data.messages || [];
 
     const emails = [];
 
     for (const message of messages) {
-      const email = await gmail.users.messages.get({
-        userId: "me",
-        id: message.id,
-        format: "metadata",
-        metadataHeaders: ["To", "Subject", "Date"]
-      });
+      const email =
+        await gmail.users.messages.get({
+          userId: "me",
+          id: message.id,
+          format: "metadata",
+          metadataHeaders: [
+            "To",
+            "Subject",
+            "Date"
+          ]
+        });
 
-      const headers = email.data.payload.headers;
+      const headers =
+        email.data.payload.headers || [];
 
       const getHeader = (name) => {
         const header = headers.find(
-          (h) => h.name.toLowerCase() === name.toLowerCase()
+          (h) =>
+            h.name.toLowerCase() ===
+            name.toLowerCase()
         );
 
         return header ? header.value : "";
       };
 
       emails.push({
-  id: message.id,
-  to: getHeader("To"),
-  subject: getHeader("Subject"),
-  date: getHeader("Date"),
-  snippet: email.data.snippet,
-  isUnread: email.data.labelIds?.includes("UNREAD") || false
-});
+        id: message.id,
+        to: getHeader("To"),
+        subject: getHeader("Subject"),
+        date: getHeader("Date"),
+        snippet: email.data.snippet,
+        isUnread:
+          email.data.labelIds?.includes(
+            "UNREAD"
+          ) || false
+      });
     }
 
     res.json(emails);
 
   } catch (error) {
-    console.error(error);
+    console.error(
+      "Sent emails error:",
+      error
+    );
 
     res.status(500).json({
-      error: "Could not load sent emails."
+      error:
+        "Could not load sent emails."
     });
   }
 });
-// Get the full content of one email
-app.get("/api/emails/:id", async (req, res) => {
-  try {
-    const gmail = google.gmail({
-      version: "v1",
-      auth: oauth2Client
-    });
 
-    const result = await gmail.users.messages.get({
-      userId: "me",
-      id: req.params.id,
-      format: "full"
-    });
+// --------------------------------------------------
+// SIMPLE LOCAL AI ASSISTANT
+// --------------------------------------------------
 
-    const message = result.data;
-    console.log("EMAIL ID:", req.params.id);
-console.log("EMAIL SUBJECT:", message.payload.headers?.find(
-  h => h.name.toLowerCase() === "subject"
-)?.value);
-console.log("EMAIL SNIPPET:", message.snippet);
-console.log("EMAIL PAYLOAD:", JSON.stringify(message.payload, null, 2));
-
-    const headers = message.payload.headers || [];
-
-    const getHeader = (name) => {
-      const header = headers.find(
-        (h) => h.name.toLowerCase() === name.toLowerCase()
-      );
-
-      return header ? header.value : "";
-    };
-
-    const decodeBody = (data) => {
-      if (!data) return "";
-
-      return Buffer.from(
-        data.replace(/-/g, "+").replace(/_/g, "/"),
-        "base64"
-      ).toString("utf-8");
-    };
-
-   // Find the email body
-// Find the email body
-const findBody = (part) => {
-  if (!part) return "";
-
-  // Prefer HTML body first
-  if (
-    part.mimeType === "text/html" &&
-    part.body &&
-    part.body.data
-  ) {
-    const html = decodeBody(part.body.data);
-
-    return html
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<script[\s\S]*?<\/script>/gi, "")
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>/gi, "\n")
-      .replace(/<div[^>]*>/gi, "\n")
-      .replace(/<\/div>/gi, "")
-      .replace(/<[^>]*>/g, "")
-      .replace(/&nbsp;/gi, " ")
-      .replace(/&amp;/gi, "&")
-      .replace(/&lt;/gi, "<")
-      .replace(/&gt;/gi, ">")
-      .trim();
-  }
-
-  // Look through child parts
-  if (part.parts && part.parts.length > 0) {
-    // First look specifically for HTML parts
-    for (const child of part.parts) {
-      if (
-        child.mimeType === "text/html" &&
-        child.body &&
-        child.body.data
-      ) {
-        const html = decodeBody(child.body.data);
-
-        return html
-          .replace(/<style[\s\S]*?<\/style>/gi, "")
-          .replace(/<script[\s\S]*?<\/script>/gi, "")
-          .replace(/<br\s*\/?>/gi, "\n")
-          .replace(/<\/p>/gi, "\n")
-          .replace(/<div[^>]*>/gi, "\n")
-          .replace(/<\/div>/gi, "")
-          .replace(/<[^>]*>/g, "")
-          .replace(/&nbsp;/gi, " ")
-          .replace(/&amp;/gi, "&")
-          .replace(/&lt;/gi, "<")
-          .replace(/&gt;/gi, ">")
-          .trim();
-      }
-    }
-
-    // If no HTML, recursively search the parts
-    for (const child of part.parts) {
-      const body = findBody(child);
-
-      if (body) {
-        return body;
-      }
-    }
-  }
-
-  // Finally use plain text
-  if (
-    part.mimeType === "text/plain" &&
-    part.body &&
-    part.body.data
-  ) {
-    return decodeBody(part.body.data);
-  }
-
-  return "";
-};
-
-    const body = findBody(message.payload);
-
-    res.json({
-      id: message.id,
-      from: getHeader("From"),
-      to: getHeader("To"),
-      subject: getHeader("Subject"),
-      date: getHeader("Date"),
-      body: body || message.snippet || ""
-    });
-
-  } catch (error) {
-    console.error("Get email error:", error);
-
-    res.status(500).json({
-      error: "Could not load the full email."
-    });
-  }
-});
 function simpleAssistant(message) {
-  const text = message.toLowerCase().trim();
+  const text =
+    message.toLowerCase().trim();
 
-  // Search emails
+  // ==========================================
+  // COMPOSE EMAIL
+  // ==========================================
+
+  const composeMatch =
+    message.match(
+      /compose\s+(?:an\s+)?email\s+to\s+([^\s]+@[^\s]+)\s+with\s+subject\s+(.+?)\s+and\s+(?:body|message)\s+(.+)/i
+    );
+
+  if (composeMatch) {
+    let subject =
+      composeMatch[2].trim();
+
+    let body =
+      composeMatch[3].trim();
+
+    // Remove surrounding quotes from subject
+    if (
+      (subject.startsWith('"') &&
+        subject.endsWith('"')) ||
+      (subject.startsWith("'") &&
+        subject.endsWith("'"))
+    ) {
+      subject =
+        subject.slice(1, -1);
+    }
+
+    // Remove surrounding quotes from body
+   // Remove quotes around body
+if (body.startsWith('"')) {
+  body = body.slice(1);
+}
+
+if (body.endsWith('"')) {
+  body = body.slice(0, -1);
+}
+
+if (body.startsWith("'")) {
+  body = body.slice(1);
+}
+
+if (body.endsWith("'")) {
+  body = body.slice(0, -1);
+}
+
+body = body.trim();
+
+    return {
+      action: "compose",
+      to: composeMatch[1].trim(),
+      subject,
+      body,
+      searchQuery: "",
+      folder: "",
+      filterType: "",
+      startDate: "",
+      endDate: ""
+    };
+  }
+
+  // ==========================================
+  // NAVIGATE TO INBOX
+  // ==========================================
+
+  if (
+    text === "show inbox" ||
+    text === "open inbox" ||
+    text === "go to inbox" ||
+    text === "inbox" ||
+    text.includes("show my inbox") ||
+    text.includes("open my inbox")
+  ) {
+    return {
+      action: "navigate",
+      to: "",
+      subject: "",
+      body: "",
+      searchQuery: "",
+      folder: "inbox",
+      filterType: "",
+      startDate: "",
+      endDate: ""
+    };
+  }
+
+  // ==========================================
+  // NAVIGATE TO SENT
+  // ==========================================
+
+  if (
+    text === "show sent" ||
+    text === "open sent" ||
+    text === "go to sent" ||
+    text === "sent" ||
+    text.includes("show my sent emails") ||
+    text.includes("open my sent emails")
+  ) {
+    return {
+      action: "navigate",
+      to: "",
+      subject: "",
+      body: "",
+      searchQuery: "",
+      folder: "sent",
+      filterType: "",
+      startDate: "",
+      endDate: ""
+    };
+  }
+
+  // ==========================================
+  // SEARCH EMAILS
+  // ==========================================
+
   if (
     text.startsWith("find emails") ||
     text.startsWith("search emails") ||
@@ -625,13 +787,15 @@ function simpleAssistant(message) {
     let searchQuery = "";
 
     if (text.includes("about ")) {
-      searchQuery = message.substring(
-        text.indexOf("about ") + 6
-      ).trim();
+      searchQuery =
+        message.substring(
+          text.indexOf("about ") + 6
+        ).trim();
     } else if (text.includes("for ")) {
-      searchQuery = message.substring(
-        text.indexOf("for ") + 4
-      ).trim();
+      searchQuery =
+        message.substring(
+          text.indexOf("for ") + 4
+        ).trim();
     }
 
     if (searchQuery) {
@@ -640,62 +804,7 @@ function simpleAssistant(message) {
         to: "",
         subject: "",
         body: "",
-        searchQuery: searchQuery,
-        folder: "",
-        filterType: "",
-        startDate: "",
-        endDate: ""
-      };
-    }
-  }
-  // Filter emails by date range
-  const dateMatch = message.match(
-    /(?:from\s+)?([A-Za-z]+\s+\d{1,2})\s+(?:to|-)\s+([A-Za-z]+\s+\d{1,2})/i
-  );
-
-  if (dateMatch) {
-    const currentYear = new Date().getFullYear();
-
-    const startDate = new Date(
-      `${dateMatch[1]} ${currentYear}`
-    );
-
-    const endDate = new Date(
-      `${dateMatch[2]} ${currentYear}`
-    );
-
-    if (!isNaN(startDate) && !isNaN(endDate)) {
-      return {
-        action: "filter",
-        to: "",
-        subject: "",
-        body: "",
-        searchQuery: "",
-        folder: "",
-        filterType: "date",
-        startDate: startDate.toISOString().slice(0, 10),
-        endDate: endDate.toISOString().slice(0, 10)
-      };
-    }
-  }
-  return null;
-}
-function simpleAssistant(message) {
-  const text = message.toLowerCase().trim();
-
-  // Search emails about something
-  if (text.includes("find emails about")) {
-    const searchQuery = message
-      .substring(text.indexOf("find emails about") + 17)
-      .trim();
-
-    if (searchQuery) {
-      return {
-        action: "search",
-        to: "",
-        subject: "",
-        body: "",
-        searchQuery: searchQuery,
+        searchQuery,
         folder: "",
         filterType: "",
         startDate: "",
@@ -704,32 +813,15 @@ function simpleAssistant(message) {
     }
   }
 
-  // Search emails for something
-  if (text.includes("find emails for")) {
-    const searchQuery = message
-      .substring(text.indexOf("find emails for") + 15)
-      .trim();
+  // ==========================================
+  // UNREAD EMAILS
+  // ==========================================
 
-    if (searchQuery) {
-      return {
-        action: "search",
-        to: "",
-        subject: "",
-        body: "",
-        searchQuery: searchQuery,
-        folder: "",
-        filterType: "",
-        startDate: "",
-        endDate: ""
-      };
-    }
-  }
-
-  // Show unread emails
   if (
     text.includes("unread emails") ||
     text.includes("unread messages") ||
-    text === "show unread"
+    text === "show unread" ||
+    text === "show unread emails"
   ) {
     return {
       action: "filter",
@@ -744,11 +836,15 @@ function simpleAssistant(message) {
     };
   }
 
-  // Show read emails
+  // ==========================================
+  // READ EMAILS
+  // ==========================================
+
   if (
     text.includes("read emails") ||
     text.includes("read messages") ||
-    text === "show read"
+    text === "show read" ||
+    text === "show read emails"
   ) {
     return {
       action: "filter",
@@ -763,13 +859,18 @@ function simpleAssistant(message) {
     };
   }
 
-  // Filter emails by date range
-  const dateMatch = message.match(
-    /(?:from\s+)?([A-Za-z]+\s+\d{1,2})\s+(?:to|-)\s+([A-Za-z]+\s+\d{1,2})/i
-  );
+  // ==========================================
+  // DATE FILTER
+  // ==========================================
+
+  const dateMatch =
+    message.match(
+      /(?:from\s+)?([A-Za-z]+\s+\d{1,2})\s+(?:to|-)\s+([A-Za-z]+\s+\d{1,2})/i
+    );
 
   if (dateMatch) {
-    const currentYear = new Date().getFullYear();
+    const currentYear =
+      new Date().getFullYear();
 
     const startDate = new Date(
       `${dateMatch[1]} ${currentYear}`
@@ -779,7 +880,10 @@ function simpleAssistant(message) {
       `${dateMatch[2]} ${currentYear}`
     );
 
-    if (!isNaN(startDate) && !isNaN(endDate)) {
+    if (
+      !isNaN(startDate) &&
+      !isNaN(endDate)
+    ) {
       return {
         action: "filter",
         to: "",
@@ -788,24 +892,40 @@ function simpleAssistant(message) {
         searchQuery: "",
         folder: "",
         filterType: "date",
-        startDate: `${currentYear}-${String(startDate.getMonth() + 1).padStart(2, "0")}-${String(startDate.getDate()).padStart(2, "0")}`,
-endDate: `${currentYear}-${String(endDate.getMonth() + 1).padStart(2, "0")}-${String(endDate.getDate()).padStart(2, "0")}`
+        startDate:
+          `${currentYear}-${String(
+            startDate.getMonth() + 1
+          ).padStart(2, "0")}-${String(
+            startDate.getDate()
+          ).padStart(2, "0")}`,
+        endDate:
+          `${currentYear}-${String(
+            endDate.getMonth() + 1
+          ).padStart(2, "0")}-${String(
+            endDate.getDate()
+          ).padStart(2, "0")}`
       };
     }
   }
 
-  // Filter emails from a sender
+  // ==========================================
+  // FILTER EMAILS FROM SENDER
+  // ==========================================
+
   if (
     text.includes("emails from") ||
     text.includes("messages from")
   ) {
-    const marker = text.includes("emails from")
-      ? "emails from"
-      : "messages from";
+    const marker =
+      text.includes("emails from")
+        ? "emails from"
+        : "messages from";
 
-    const searchQuery = message
-      .substring(text.indexOf(marker) + marker.length)
-      .trim();
+    const searchQuery =
+      message.substring(
+        text.indexOf(marker) +
+          marker.length
+      ).trim();
 
     if (searchQuery) {
       return {
@@ -813,7 +933,7 @@ endDate: `${currentYear}-${String(endDate.getMonth() + 1).padStart(2, "0")}-${St
         to: "",
         subject: "",
         body: "",
-        searchQuery: searchQuery,
+        searchQuery,
         folder: "",
         filterType: "sender",
         startDate: "",
@@ -824,37 +944,70 @@ endDate: `${currentYear}-${String(endDate.getMonth() + 1).padStart(2, "0")}-${St
 
   return null;
 }
-// AI Assistant
+
+// --------------------------------------------------
+// AI ASSISTANT
+// --------------------------------------------------
+
 app.post("/api/assistant", async (req, res) => {
   try {
-    const { message, context } = req.body;
-        // Handle reply using the currently opened email
+    const {
+      message,
+      context
+    } = req.body;
+
+    if (!message) {
+      return res.status(400).json({
+        error: "Message is required."
+      });
+    }
+
+    // ==========================================
+    // REPLY TO CURRENT EMAIL
+    // ==========================================
+
     if (
       context &&
       context.from &&
       context.subject &&
-      message.toLowerCase().includes("reply")
+      message
+        .toLowerCase()
+        .includes("reply")
     ) {
-      const lowerMessage = message.toLowerCase();
+      const lowerMessage =
+        message.toLowerCase();
 
       let replyBody = message;
 
-      if (lowerMessage.includes("saying")) {
-        replyBody = message.substring(
-          lowerMessage.indexOf("saying") + 6
-        ).trim();
-      } else if (lowerMessage.includes("that")) {
-        replyBody = message.substring(
-          lowerMessage.indexOf("that") + 4
-        ).trim();
+      if (
+        lowerMessage.includes("saying")
+      ) {
+        replyBody =
+          message.substring(
+            lowerMessage.indexOf(
+              "saying"
+            ) + 6
+          ).trim();
+      } else if (
+        lowerMessage.includes("that")
+      ) {
+        replyBody =
+          message.substring(
+            lowerMessage.indexOf(
+              "that"
+            ) + 4
+          ).trim();
       }
 
       return res.json({
         action: "compose",
         to: context.from,
-        subject: context.subject.startsWith("Re:")
-          ? context.subject
-          : `Re: ${context.subject}`,
+        subject:
+          context.subject.startsWith(
+            "Re:"
+          )
+            ? context.subject
+            : `Re: ${context.subject}`,
         body: replyBody,
         searchQuery: "",
         folder: "",
@@ -863,24 +1016,39 @@ app.post("/api/assistant", async (req, res) => {
         endDate: ""
       });
     }
-    const today = new Date().toISOString().slice(0, 10);
 
-    if (!message) {
-      return res.status(400).json({
-        error: "Message is required."
-      });
+    // ==========================================
+    // LOCAL ASSISTANT FIRST
+    // ==========================================
+
+    const simpleResult =
+      simpleAssistant(message);
+
+    if (simpleResult) {
+      console.log(
+        "Simple Assistant:",
+        simpleResult
+      );
+
+      return res.json(
+        simpleResult
+      );
     }
-      const simpleResult = simpleAssistant(message);
 
-if (simpleResult) {
-  console.log("Simple Assistant:", simpleResult);
-  return res.json(simpleResult);
-}
-    
+    // ==========================================
+    // GEMINI
+    // ==========================================
 
-    const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
-      contents: `
+    const today =
+      new Date()
+        .toISOString()
+        .slice(0, 10);
+
+    const response =
+      await ai.models.generateContent({
+        model: "gemini-3.6-flash",
+
+        contents: `
 You are the AI assistant for Nebula Mail.
 
 The user will give you a request about email.
@@ -888,6 +1056,7 @@ The user will give you a request about email.
 Decide what action the user wants.
 
 Possible actions:
+
 - compose
 - search
 - navigate
@@ -909,6 +1078,7 @@ Return ONLY valid JSON in this exact format:
 }
 
 Rules:
+
 - If the user wants to compose an email, action must be "compose".
 - Extract the recipient email if provided.
 - Extract the subject if provided.
@@ -918,101 +1088,144 @@ Rules:
 
 - If the user wants to search or find emails, action must be "search".
 - For a search request, put the important search keyword in "searchQuery".
-
 - "Find emails about internship" should produce searchQuery "internship".
 - Search should work against the sender, subject, and email preview/snippet.
+
 - If the user wants to see unread emails, action must be "filter" and filterType must be "unread".
 - If the user wants to see read emails, action must be "filter" and filterType must be "read".
 
 - If the user asks to show emails from a specific sender, action must be "filter" and filterType must be "sender".
 - For sender filters, put the sender name or email address in searchQuery.
 
-- For unread and read filter requests, leave to, subject, body, and searchQuery empty.
-- For sender filter requests, leave to, subject, and body empty.
 - If the user asks to filter emails by a date or date range, action must be "filter" and filterType must be "date".
 - For date filters, put the starting date in startDate and the ending date in endDate.
-- Use the date format YYYY-MM-DD.
+- Use date format YYYY-MM-DD.
 - The current year is 2026.
+
 - When the user gives a date without a year, assume the current year 2026.
 - For example, "September 1 to September 4" means 2026-09-01 to 2026-09-04.
+
 - For "today", use today's date.
 - For "yesterday", use yesterday's date.
 - For "last week", use the previous calendar week's Monday as startDate and Sunday as endDate.
-- For date filter requests, leave to, subject, body, searchQuery, and folder empty.
+
 - If the user refers to "this email", "this message", "the email I'm viewing", or similar wording, use the Current email context.
 
 - If the user wants to reply to the currently open email, action must be "compose".
 - For a reply, use the original sender's email address as "to".
 - For a reply, use "Re: " followed by the original subject as the subject.
 - Generate the reply body based on what the user requested.
+
 - If no email is currently open, leave the compose fields empty.
+
+- If the user wants to open or show their inbox, action must be "navigate" and folder must be "inbox".
+
+- If the user wants to open or show their sent emails, action must be "navigate" and folder must be "sent".
+
+- For navigation requests, leave to, subject, body, and searchQuery empty.
 
 - If information is missing, leave that field as an empty string.
 - Do not add markdown.
 - Do not explain anything outside the JSON.
 
-- If the user wants to open or show their inbox, action must be "navigate" and folder must be "inbox".
-- If the user wants to open or show their sent emails, action must be "navigate" and folder must be "sent".
-- For navigation requests, leave to, subject, body, and searchQuery empty.
+Current date:
 
+${today}
 
-Current date: ${today}
-
-When the user gives a date without a year, assume the current year.
-For example, "September 1 to September 4" means the September 1 to September 4 dates in the current year.
 Current email context:
-${context ? JSON.stringify(context) : "No email is currently open."}
+
+${
+  context
+    ? JSON.stringify(context)
+    : "No email is currently open."
+}
 
 User request:
+
 ${message}
-      `,
-    config: {
-  responseMimeType: "application/json",
+        `,
 
-  responseSchema: {
-    type: "object",
+        config: {
+          responseMimeType:
+            "application/json",
 
-   properties: {
-  action: { type: "string" },
-  to: { type: "string" },
-  subject: { type: "string" },
-  body: { type: "string" },
-  searchQuery: { type: "string" },
-  folder: { type: "string" },
-  filterType: { type: "string" },
-  startDate: { type: "string" },
-  endDate: { type: "string" }
-},
+          responseSchema: {
+            type: "object",
 
-   required: [
-  "action",
-  "to",
-  "subject",
-  "body",
-  "searchQuery",
-  "folder",
-  "filterType",
-  "startDate",
-  "endDate"
-]
-  }
-}
-    });
+            properties: {
+              action: {
+                type: "string"
+              },
+              to: {
+                type: "string"
+              },
+              subject: {
+                type: "string"
+              },
+              body: {
+                type: "string"
+              },
+              searchQuery: {
+                type: "string"
+              },
+              folder: {
+                type: "string"
+              },
+              filterType: {
+                type: "string"
+              },
+              startDate: {
+                type: "string"
+              },
+              endDate: {
+                type: "string"
+              }
+            },
 
-    const result = JSON.parse(response.text);
+            required: [
+              "action",
+              "to",
+              "subject",
+              "body",
+              "searchQuery",
+              "folder",
+              "filterType",
+              "startDate",
+              "endDate"
+            ]
+          }
+        }
+      });
 
-    console.log("Gemini response:", result);
+    const result =
+      JSON.parse(response.text);
+
+    console.log(
+      "Gemini response:",
+      result
+    );
 
     res.json(result);
 
   } catch (error) {
-    console.error("Gemini Assistant Error:", error);
+    console.error(
+      "Gemini Assistant Error:",
+      error
+    );
 
     res.status(500).json({
-      error: "AI assistant could not process the request."
+      error:
+        "AI assistant could not process the request."
     });
   }
 });
+
+// --------------------------------------------------
+// START SERVER
+// --------------------------------------------------
+
 app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+  console.log(
+    `Server running on http://localhost:${PORT}`
+  );
 });

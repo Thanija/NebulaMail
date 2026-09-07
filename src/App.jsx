@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
+
 import {
   Mail,
   Inbox,
@@ -14,45 +15,100 @@ import {
 
 import "./App.css";
 
+
 function App() {
+
   // =========================
   // EMAIL STATES
   // =========================
-const [emails, setEmails] = useState([]);
-const [sentEmails, setSentEmails] = useState([]);
-const [folder, setFolder] = useState("inbox");
-const [loading, setLoading] = useState(true);
-const [error, setError] = useState("");
 
-// =========================
-// COMPOSE STATES
-// =========================
+  const [emails, setEmails] = useState([]);
+  const [sentEmails, setSentEmails] = useState([]);
+  const [folder, setFolder] = useState("inbox");
 
-const [showCompose, setShowCompose] = useState(false);
-const [to, setTo] = useState("");
-const [subject, setSubject] = useState("");
-const [body, setBody] = useState("");
-const [sending, setSending] = useState(false);
-const [sendMessage, setSendMessage] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-const [assistantInput, setAssistantInput] = useState("");
-const [searchQuery, setSearchQuery] = useState("");
-const [filterType, setFilterType] = useState("");
 
-const [startDate, setStartDate] = useState("");
-const [endDate, setEndDate] = useState("");
-const [dateRange, setDateRange] = useState({
-  start: "",
-  end: ""
-});
-
-const [selectedEmail, setSelectedEmail] = useState(null);
   // =========================
-  // LOAD INBOX
+  // COMPOSE STATES
+  // =========================
+
+  const [showCompose, setShowCompose] = useState(false);
+
+  const [to, setTo] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+
+  const [sending, setSending] = useState(false);
+  const [sendMessage, setSendMessage] = useState("");
+
+
+  // =========================
+  // AI ASSISTANT STATES
+  // =========================
+
+  const [assistantInput, setAssistantInput] = useState("");
+
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterType, setFilterType] = useState("");
+
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+
+  const [dateRange, setDateRange] = useState({
+    start: "",
+    end: ""
+  });
+
+
+  // =========================
+  // SELECTED EMAIL
+  // =========================
+
+  const [selectedEmail, setSelectedEmail] = useState(null);
+
+
+  // =========================
+  // REFS FOR AUTOMATIC SYNC
+  // =========================
+
+  const searchQueryRef = useRef("");
+  const filterTypeRef = useRef("");
+
+  const dateRangeRef = useRef({
+    start: "",
+    end: ""
+  });
+
+
+  // =========================
+  // KEEP REFS UPDATED
+  // =========================
+
+  useEffect(() => {
+
+    searchQueryRef.current = searchQuery;
+
+    filterTypeRef.current = filterType;
+
+    dateRangeRef.current = dateRange;
+
+  }, [
+    searchQuery,
+    filterType,
+    dateRange
+  ]);
+
+
+  // =========================
+  // LOAD INBOX EMAILS
   // =========================
 
   const loadEmails = async () => {
+
     try {
+
       setLoading(true);
       setError("");
 
@@ -67,20 +123,32 @@ const [selectedEmail, setSelectedEmail] = useState(null);
       const data = await response.json();
 
       setEmails(data);
+
     } catch (err) {
+
       console.error(err);
-      setError("Could not load Gmail emails.");
+
+      setError(
+        "Could not load Gmail emails."
+      );
+
     } finally {
+
       setLoading(false);
+
     }
+
   };
+
 
   // =========================
   // LOAD SENT EMAILS
   // =========================
 
   const loadSentEmails = async () => {
+
     try {
+
       setLoading(true);
       setError("");
 
@@ -89,254 +157,165 @@ const [selectedEmail, setSelectedEmail] = useState(null);
       );
 
       if (!response.ok) {
-        throw new Error("Failed to load sent emails");
+        throw new Error(
+          "Failed to load sent emails"
+        );
       }
 
       const data = await response.json();
 
       setSentEmails(data);
+
     } catch (err) {
+
       console.error(err);
-      setError("Could not load sent emails.");
+
+      setError(
+        "Could not load sent emails."
+      );
+
     } finally {
+
       setLoading(false);
+
     }
+
   };
 
+
   // =========================
-  // LOAD INBOX WHEN APP STARTS
+  // LOAD WHEN FOLDER CHANGES
   // =========================
 
   useEffect(() => {
-  if (folder === "inbox") {
-    loadEmails();
-  } else if (folder === "sent") {
-    loadSentEmails();
-  }
-}, [folder]);
-useEffect(() => {
-  const interval = setInterval(() => {
-    if (folder === "inbox") {
-      loadEmails();
-    } else {
-      loadSentEmails();
-    }
-  }, 15000);
 
-  return () => clearInterval(interval);
-}, [folder]);
+    // Clear search/filter when folder changes
+    setSearchQuery("");
+    setFilterType("");
+
+    setStartDate("");
+    setEndDate("");
+
+    setDateRange({
+      start: "",
+      end: ""
+    });
+
+
+    if (folder === "inbox") {
+
+      loadEmails();
+
+    } else if (folder === "sent") {
+
+      loadSentEmails();
+
+    }
+
+  }, [folder]);
+
+
+  // =========================
+  // AUTOMATIC EMAIL SYNC
+  // =========================
+
+  useEffect(() => {
+
+    const interval = setInterval(() => {
+
+      // Read the latest search/filter state
+      const hasSearch =
+        searchQueryRef.current.trim() !== "";
+
+      const hasFilter =
+        filterTypeRef.current !== "";
+
+      const hasDateFilter =
+        dateRangeRef.current.start !== "" ||
+        dateRangeRef.current.end !== "";
+
+
+      // IMPORTANT:
+      // Don't overwrite search/filter results
+      if (
+        hasSearch ||
+        hasFilter ||
+        hasDateFilter
+      ) {
+
+        console.log(
+          "Auto sync skipped because search/filter is active."
+        );
+
+        return;
+
+      }
+
+
+      // Normal automatic sync
+
+      console.log(
+        "Automatic email sync..."
+      );
+
+
+      if (folder === "inbox") {
+
+        loadEmails();
+
+      } else if (folder === "sent") {
+
+        loadSentEmails();
+
+      }
+
+    }, 15000);
+
+
+    return () => {
+
+      clearInterval(interval);
+
+    };
+
+  }, [folder]);
+
 
   // =========================
   // REFRESH CURRENT FOLDER
   // =========================
 
   const refreshCurrentFolder = () => {
+
     if (folder === "inbox") {
+
       loadEmails();
+
     } else if (folder === "sent") {
+
       loadSentEmails();
+
     }
+
   };
- const handleAssistant = async () => {
-  const message = assistantInput.trim();
 
-  if (!message) return;
-
-  try {
-    const response = await fetch("http://localhost:5000/api/assistant", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-  message: message,
-  context: selectedEmail
-    ? {
-        from: selectedEmail.from,
-        to: selectedEmail.to,
-        subject: selectedEmail.subject,
-        body: selectedEmail.body
-      }
-    : null
-})
-    });
-
-    const data = await response.json();
-    console.log("AI RESPONSE:", data);
-
-    if (!response.ok) {
-      alert(data.error || "AI assistant failed.");
-      return;
-    }
-
-    console.log("AI response:", data);
-
-    if (data.action === "compose") {
-      setShowCompose(true);
-
-      setTo(data.to || "");
-      setSubject(data.subject || "");
-      setBody(data.body || "");
-
-      setAssistantInput("");
-      return;
-    }
-  if (data.action === "search") {
-  try {
-    const params = new URLSearchParams({
-      folder: folder,
-      filterType: "search",
-      searchQuery: data.searchQuery || ""
-    });
-
-    const response = await fetch(
-      `http://localhost:5000/api/filter-emails?${params.toString()}`
-    );
-
-    const searchResults = await response.json();
-
-    if (!response.ok) {
-      alert(searchResults.error || "Could not search emails.");
-      return;
-    }
-
-    if (folder === "inbox") {
-      setEmails(searchResults);
-    } else {
-      setSentEmails(searchResults);
-    }
-
-    setSearchQuery(data.searchQuery || "");
-    setFilterType("");
-    setDateRange({ start: "", end: "" });
-    setStartDate("");
-    setEndDate("");
-    setAssistantInput("");
-
-  } catch (error) {
-    console.error("AI search error:", error);
-    alert("Could not connect to Gmail search.");
-  }
-
-  return;
-}
-   if (data.action === "navigate") {
-  if (data.folder === "inbox") {
-    setFolder("inbox");
-  }
-
-  if (data.folder === "sent") {
-    setFolder("sent");
-  }
-
-  setSearchQuery("");
-  setFilterType("");
-  setStartDate("");
-  setEndDate("");
-  setDateRange({
-  start: "",
-  end: ""
-});
-  setAssistantInput("");
-  return;
-}
-if (data.action === "filter") {
-  try {
-    const params = new URLSearchParams({
-      folder: folder,
-      filterType: data.filterType || "",
-      startDate: data.startDate || "",
-      endDate: data.endDate || "",
-      searchQuery: data.searchQuery || ""
-    });
-
-    const response = await fetch(
-      `http://localhost:5000/api/filter-emails?${params.toString()}`
-    );
-
-    const filteredEmails = await response.json();
-
-    if (!response.ok) {
-      alert(filteredEmails.error || "Could not filter emails.");
-      return;
-    }
-
-    // Update the main email list with Gmail's filtered results
-    if (folder === "inbox") {
-      setEmails(filteredEmails);
-    } else {
-      setSentEmails(filteredEmails);
-    }
-
-    // Keep the filter information in the UI
-    setFilterType(data.filterType || "");
-
-    if (data.filterType === "date") {
-      setSearchQuery("");
-      setDateRange({
-        start: data.startDate || "",
-        end: data.endDate || ""
-      });
-    }
-
-    if (data.filterType === "unread") {
-      setSearchQuery("");
-      setDateRange({
-        start: "",
-        end: ""
-      });
-    }
-
-    if (data.filterType === "read") {
-      setSearchQuery("");
-      setDateRange({
-        start: "",
-        end: ""
-      });
-    }
-
-    setAssistantInput("");
-
-  } catch (error) {
-    console.error("Filter error:", error);
-    alert("Could not connect to Gmail filtering.");
-  }
-
-  return;
-}
-
-    alert("The AI understood your request, but we haven't added that action yet.");
-  } catch (error) {
-    console.error(error);
-    alert("Could not connect to the AI assistant.");
-  }
-};
 
   // =========================
-  // SEND EMAIL
+  // AI ASSISTANT
   // =========================
 
-  const sendEmail = async () => {
-    // Check fields
-    if (!to || !subject || !body) {
-      setSendMessage("Please fill all fields.");
-      return;
-    }
-     // Confirm before sending
-  const confirmed = window.confirm(
-    `Are you sure you want to send this email?\n\nTo: ${to}\nSubject: ${subject}`
-  );
+  const handleAssistant = async () => {
 
-  if (!confirmed) {
-    return;
-  }
+    const message =
+      assistantInput.trim();
+
+    if (!message) return;
+
 
     try {
-      setSending(true);
-      setSendMessage("");
 
       const response = await fetch(
-        "http://localhost:5000/api/send",
+        "http://localhost:5000/api/assistant",
         {
           method: "POST",
 
@@ -345,122 +324,668 @@ if (data.action === "filter") {
           },
 
           body: JSON.stringify({
-            to,
-            subject,
-            body
+
+            message: message,
+
+            context: selectedEmail
+              ? {
+                  from: selectedEmail.from,
+                  to: selectedEmail.to,
+                  subject: selectedEmail.subject,
+                  body: selectedEmail.body
+                }
+              : null
+
           })
+
         }
       );
 
-      const data = await response.json();
+
+      const data =
+        await response.json();
+
+
+      console.log(
+        "AI RESPONSE:",
+        data
+      );
+
 
       if (!response.ok) {
-        throw new Error(
-          data.error || "Failed to send"
+
+        alert(
+          data.error ||
+          "AI assistant failed."
         );
+
+        return;
+
       }
 
+
+      // =========================
+      // COMPOSE
+      // =========================
+
+      if (data.action === "compose") {
+
+        setShowCompose(true);
+
+        setTo(data.to || "");
+
+        setSubject(
+          data.subject || ""
+        );
+
+        setBody(
+          data.body || ""
+        );
+
+        setAssistantInput("");
+
+        return;
+
+      }
+
+
+      // =========================
+      // SEARCH
+      // =========================
+
+      if (data.action === "search") {
+
+        try {
+
+          const params =
+            new URLSearchParams({
+
+              folder: folder,
+
+              filterType: "search",
+
+              searchQuery:
+                data.searchQuery || ""
+
+            });
+
+
+          const searchResponse =
+            await fetch(
+              `http://localhost:5000/api/filter-emails?${params.toString()}`
+            );
+
+
+          const searchResults =
+            await searchResponse.json();
+
+
+          if (!searchResponse.ok) {
+
+            alert(
+              searchResults.error ||
+              "Could not search emails."
+            );
+
+            return;
+
+          }
+
+
+          // Update the correct folder
+
+          if (folder === "inbox") {
+
+            setEmails(searchResults);
+
+          } else {
+
+            setSentEmails(searchResults);
+
+          }
+
+
+          // Keep search active
+
+          setSearchQuery(
+            data.searchQuery || ""
+          );
+
+          setFilterType("");
+
+          setDateRange({
+            start: "",
+            end: ""
+          });
+
+          setStartDate("");
+          setEndDate("");
+
+          setAssistantInput("");
+
+        } catch (error) {
+
+          console.error(
+            "AI search error:",
+            error
+          );
+
+          alert(
+            "Could not connect to Gmail search."
+          );
+
+        }
+
+        return;
+
+      }
+
+
+      // =========================
+      // NAVIGATION
+      // =========================
+
+      if (data.action === "navigate") {
+
+        if (data.folder === "inbox") {
+
+          setFolder("inbox");
+
+        }
+
+        if (data.folder === "sent") {
+
+          setFolder("sent");
+
+        }
+
+
+        setSearchQuery("");
+
+        setFilterType("");
+
+        setStartDate("");
+        setEndDate("");
+
+        setDateRange({
+          start: "",
+          end: ""
+        });
+
+        setAssistantInput("");
+
+        return;
+
+      }
+
+
+      // =========================
+      // FILTER
+      // =========================
+
+      if (data.action === "filter") {
+
+        try {
+
+          const params =
+            new URLSearchParams({
+
+              folder: folder,
+
+              filterType:
+                data.filterType || "",
+
+              startDate:
+                data.startDate || "",
+
+              endDate:
+                data.endDate || "",
+
+              searchQuery:
+                data.searchQuery || ""
+
+            });
+
+
+          const response =
+            await fetch(
+              `http://localhost:5000/api/filter-emails?${params.toString()}`
+            );
+
+
+          const filteredEmails =
+            await response.json();
+
+
+          if (!response.ok) {
+
+            alert(
+              filteredEmails.error ||
+              "Could not filter emails."
+            );
+
+            return;
+
+          }
+
+
+          // Update main email list
+
+          if (folder === "inbox") {
+
+            setEmails(filteredEmails);
+
+          } else {
+
+            setSentEmails(
+              filteredEmails
+            );
+
+          }
+
+
+          // Keep filter active
+
+          setFilterType(
+            data.filterType || ""
+          );
+
+
+          // DATE FILTER
+
+          if (
+            data.filterType === "date"
+          ) {
+
+            setSearchQuery("");
+
+            setDateRange({
+
+              start:
+                data.startDate || "",
+
+              end:
+                data.endDate || ""
+
+            });
+
+            setStartDate(
+              data.startDate || ""
+            );
+
+            setEndDate(
+              data.endDate || ""
+            );
+
+          }
+
+
+          // UNREAD FILTER
+
+          if (
+            data.filterType === "unread"
+          ) {
+
+            setSearchQuery("");
+
+            setDateRange({
+              start: "",
+              end: ""
+            });
+
+            setStartDate("");
+            setEndDate("");
+
+          }
+
+
+          // READ FILTER
+
+          if (
+            data.filterType === "read"
+          ) {
+
+            setSearchQuery("");
+
+            setDateRange({
+              start: "",
+              end: ""
+            });
+
+            setStartDate("");
+            setEndDate("");
+
+          }
+
+
+          // SENDER FILTER
+
+          if (
+            data.filterType === "sender"
+          ) {
+
+            setSearchQuery(
+              data.searchQuery || ""
+            );
+
+            setDateRange({
+              start: "",
+              end: ""
+            });
+
+            setStartDate("");
+            setEndDate("");
+
+          }
+
+
+          setAssistantInput("");
+
+        } catch (error) {
+
+          console.error(
+            "Filter error:",
+            error
+          );
+
+          alert(
+            "Could not connect to Gmail filtering."
+          );
+
+        }
+
+        return;
+
+      }
+
+
+      alert(
+        "The AI understood your request, but we haven't added that action yet."
+      );
+
+    } catch (error) {
+
+      console.error(error);
+
+      alert(
+        "Could not connect to the AI assistant."
+      );
+
+    }
+
+  };
+
+
+  // =========================
+  // SEND EMAIL
+  // =========================
+
+  const sendEmail = async () => {
+
+    // Check fields
+
+    if (
+      !to ||
+      !subject ||
+      !body
+    ) {
+
+      setSendMessage(
+        "Please fill all fields."
+      );
+
+      return;
+
+    }
+
+
+    // Confirmation before sending
+
+    const confirmed =
+      window.confirm(
+        `Are you sure you want to send this email?\n\nTo: ${to}\nSubject: ${subject}`
+      );
+
+
+    if (!confirmed) {
+
+      return;
+
+    }
+
+
+    try {
+
+      setSending(true);
+
+      setSendMessage("");
+
+
+      const response =
+        await fetch(
+          "http://localhost:5000/api/send",
+          {
+            method: "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+
+            body: JSON.stringify({
+
+              to,
+              subject,
+              body
+
+            })
+
+          }
+        );
+
+
+      const data =
+        await response.json();
+
+
+      if (!response.ok) {
+
+        throw new Error(
+          data.error ||
+          "Failed to send"
+        );
+
+      }
+
+
       // Success message
+
       setSendMessage(
         "Email sent successfully! 🎉"
       );
 
+
       // Clear fields
+
       setTo("");
       setSubject("");
       setBody("");
 
+
       // Refresh sent emails
+
       loadSentEmails();
 
+
       // Close compose window
+
       setTimeout(() => {
+
         setShowCompose(false);
+
         setSendMessage("");
+
       }, 1500);
 
+
     } catch (err) {
+
       console.error(err);
 
       setSendMessage(
         "Could not send email."
       );
+
     } finally {
+
       setSending(false);
+
     }
+
   };
+
 
   // =========================
   // DISPLAYED EMAILS
   // =========================
-  const baseEmails = folder === "inbox" ? emails : sentEmails;
 
- const displayedEmails = baseEmails.filter((email) => {
+  const baseEmails =
+    folder === "inbox"
+      ? emails
+      : sentEmails;
 
-  if (filterType === "date") {
-  console.log("DATE RANGE:", dateRange.start, dateRange.end);
-  console.log("EMAIL DATE:", email.date);
 
-  if (!dateRange.start || !dateRange.end) {
-    return true;
-  }
+  const displayedEmails =
+    baseEmails.filter((email) => {
 
-  const emailTime = new Date(email.date).getTime();
 
-  const startTime = new Date(
-    dateRange.start + "T00:00:00"
-  ).getTime();
+      // =========================
+      // DATE FILTER
+      // =========================
 
-  const endTime = new Date(
-    dateRange.end + "T23:59:59"
-  ).getTime();
+      if (
+        filterType === "date"
+      ) {
 
-  return emailTime >= startTime && emailTime <= endTime;
-}
+        if (
+          !dateRange.start ||
+          !dateRange.end
+        ) {
 
-  // your existing code below...
+          return true;
 
-  // No search/filter
-  if (!searchQuery) {
-    return true;
-  }
+        }
 
-  // Unread filter
-  if (searchQuery === "is:unread") {
-    return email.isUnread;
-  }
 
-  // Read filter
-  if (searchQuery === "is:read") {
-    return !email.isUnread;
-  }
+        const emailTime =
+          new Date(
+            email.date
+          ).getTime();
 
-  // Sender filter
-  if (filterType === "sender") {
-    const sender = (email.from || "").toLowerCase();
 
-    return sender.includes(searchQuery.toLowerCase());
-  }
+        const startTime =
+          new Date(
+            dateRange.start +
+            "T00:00:00"
+          ).getTime();
 
-  // Normal keyword search
-  const text = [
-    email.from,
-    email.to,
-    email.subject,
-    email.snippet
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
 
-  return text.includes(searchQuery.toLowerCase());
-});
+        const endTime =
+          new Date(
+            dateRange.end +
+            "T23:59:59"
+          ).getTime();
+
+
+        return (
+          emailTime >= startTime &&
+          emailTime <= endTime
+        );
+
+      }
+
+
+      // =========================
+      // UNREAD FILTER
+      // =========================
+
+      if (
+        filterType === "unread"
+      ) {
+
+        return email.isUnread;
+
+      }
+
+
+      // =========================
+      // READ FILTER
+      // =========================
+
+      if (
+        filterType === "read"
+      ) {
+
+        return !email.isUnread;
+
+      }
+
+
+      // =========================
+      // SENDER FILTER
+      // =========================
+
+      if (
+        filterType === "sender"
+      ) {
+
+        const sender =
+          (
+            email.from || ""
+          ).toLowerCase();
+
+
+        return sender.includes(
+          searchQuery.toLowerCase()
+        );
+
+      }
+
+
+      // =========================
+      // NORMAL SEARCH
+      // =========================
+
+      // Gmail already performed
+      // the search on the server.
+
+      if (
+        searchQuery &&
+        filterType === ""
+      ) {
+
+        return true;
+
+      }
+
+
+      // =========================
+      // NO FILTER
+      // =========================
+
+      return true;
+
+    });
+
+
   // =========================
   // UI
   // =========================
 
   return (
+
     <div className="app">
+
 
       {/* ================================= */}
       {/* SIDEBAR */}
@@ -468,17 +993,21 @@ if (data.action === "filter") {
 
       <aside className="sidebar">
 
-        {/* Logo */}
+
+        {/* LOGO */}
 
         <div className="logo">
+
           <Mail size={28} />
 
           <span>
             Nebula Mail
           </span>
+
         </div>
 
-        {/* Compose Button */}
+
+        {/* COMPOSE BUTTON */}
 
         <button
           className="compose-btn"
@@ -486,14 +1015,18 @@ if (data.action === "filter") {
             setShowCompose(true)
           }
         >
+
           <Plus size={20} />
 
           Compose
+
         </button>
 
-        {/* Navigation */}
+
+        {/* NAVIGATION */}
 
         <nav className="nav-menu">
+
 
           {/* INBOX */}
 
@@ -503,9 +1036,11 @@ if (data.action === "filter") {
                 ? "active"
                 : ""
             }`}
+
             onClick={() => {
+
               setFolder("inbox");
-              loadEmails();
+
             }}
           >
 
@@ -516,10 +1051,13 @@ if (data.action === "filter") {
             </span>
 
             <span className="count">
+
               {emails.length}
+
             </span>
 
           </div>
+
 
           {/* SENT */}
 
@@ -529,9 +1067,11 @@ if (data.action === "filter") {
                 ? "active"
                 : ""
             }`}
+
             onClick={() => {
+
               setFolder("sent");
-              loadSentEmails();
+
             }}
           >
 
@@ -542,6 +1082,7 @@ if (data.action === "filter") {
             </span>
 
           </div>
+
 
           {/* STARRED */}
 
@@ -555,6 +1096,7 @@ if (data.action === "filter") {
 
           </div>
 
+
           {/* TRASH */}
 
           <div className="nav-item">
@@ -567,22 +1109,25 @@ if (data.action === "filter") {
 
           </div>
 
+
         </nav>
 
       </aside>
 
 
       {/* ================================= */}
-      {/* MAIN CONTENT */}
+      {/* MAIN */}
       {/* ================================= */}
 
       <main className="main">
+
 
         {/* TOP BAR */}
 
         <header className="topbar">
 
-          {/* Search */}
+
+          {/* SEARCH */}
 
           <div className="search">
 
@@ -592,19 +1137,31 @@ if (data.action === "filter") {
               type="text"
               placeholder="Search emails..."
               value={searchQuery}
+
               onChange={(e) => {
-  setSearchQuery(e.target.value);
-  setFilterType("");
-  setDateRange({
-    start: "",
-    end: ""
-  });
-}}
+
+                setSearchQuery(
+                  e.target.value
+                );
+
+                setFilterType("");
+
+                setDateRange({
+                  start: "",
+                  end: ""
+                });
+
+                setStartDate("");
+                setEndDate("");
+
+              }}
+
             />
 
           </div>
 
-          {/* Profile */}
+
+          {/* PROFILE */}
 
           <div className="profile">
 
@@ -614,6 +1171,7 @@ if (data.action === "filter") {
 
           </div>
 
+
         </header>
 
 
@@ -621,13 +1179,15 @@ if (data.action === "filter") {
 
         <section className="content">
 
+
           {/* ================================= */}
           {/* MAIL SECTION */}
           {/* ================================= */}
 
           <div className="mail-section">
 
-            {/* Heading + Refresh */}
+
+            {/* HEADING */}
 
             <div
               style={{
@@ -640,15 +1200,19 @@ if (data.action === "filter") {
             >
 
               <h1>
+
                 {folder === "inbox"
                   ? "Inbox"
                   : "Sent"}
+
               </h1>
+
 
               <button
                 onClick={
                   refreshCurrentFolder
                 }
+
                 style={{
                   border: "none",
                   background: "white",
@@ -656,6 +1220,7 @@ if (data.action === "filter") {
                   borderRadius: "8px",
                   cursor: "pointer"
                 }}
+
                 title="Refresh"
               >
 
@@ -668,36 +1233,44 @@ if (data.action === "filter") {
             </div>
 
 
-            {/* Loading */}
+            {/* LOADING */}
 
             {loading && (
+
               <p>
                 Loading your Gmail emails...
               </p>
+
             )}
 
 
-            {/* Error */}
+            {/* ERROR */}
 
             {error && (
+
               <p
                 style={{
                   color: "red"
                 }}
               >
+
                 {error}
+
               </p>
+
             )}
 
 
-            {/* No Emails */}
+            {/* NO EMAILS */}
 
             {!loading &&
               !error &&
               displayedEmails.length === 0 && (
+
                 <p>
                   No emails found.
                 </p>
+
               )}
 
 
@@ -705,74 +1278,110 @@ if (data.action === "filter") {
 
             <div className="mail-list">
 
+
               {displayedEmails.map(
                 (email) => (
 
                   <div
                     className="mail-item"
                     key={email.id}
-                   onClick={async () => {
-                     try {
-                       const response = await fetch(
-                      `http://localhost:5000/api/emails/${email.id}`
-                       );
 
-                       const data = await response.json();
+                    onClick={async () => {
 
-                       if (!response.ok) {
-                         alert(data.error || "Could not open email.");
-                         return;
-                         }
+                      try {
 
-                        setSelectedEmail(data);
-                         } catch (error) {
-                        console.error(error);
-                        alert("Could not load the email.");
-                         }
-                     }}
+                        const response =
+                          await fetch(
+                            `http://localhost:5000/api/emails/${email.id}`
+                          );
+
+
+                        const data =
+                          await response.json();
+
+
+                        if (!response.ok) {
+
+                          alert(
+                            data.error ||
+                            "Could not open email."
+                          );
+
+                          return;
+
+                        }
+
+
+                        setSelectedEmail(
+                          data
+                        );
+
+
+                      } catch (error) {
+
+                        console.error(
+                          error
+                        );
+
+                        alert(
+                          "Could not load the email."
+                        );
+
+                      }
+
+                    }}
+
                   >
 
-                    {/* Avatar */}
+
+                    {/* AVATAR */}
 
                     <div className="mail-avatar">
 
                       {folder === "inbox"
+
                         ? email.from
                           ? email.from
                               .charAt(0)
                               .toUpperCase()
                           : "?"
+
                         : email.to
                           ? email.to
                               .charAt(0)
                               .toUpperCase()
                           : "?"
+
                       }
 
                     </div>
 
 
-                    {/* Email Information */}
+                    {/* EMAIL INFORMATION */}
 
                     <div className="mail-info">
 
-                      {/* Sender / Recipient */}
+
+                      {/* SENDER */}
 
                       <strong>
 
                         {folder === "inbox"
+
                           ? email.from ||
                             "Unknown sender"
+
                           : `To: ${
                               email.to ||
                               "Unknown recipient"
                             }`
+
                         }
 
                       </strong>
 
 
-                      {/* Subject */}
+                      {/* SUBJECT */}
 
                       <span>
 
@@ -782,7 +1391,7 @@ if (data.action === "filter") {
                       </span>
 
 
-                      {/* Snippet */}
+                      {/* SNIPPET */}
 
                       <p>
 
@@ -791,24 +1400,31 @@ if (data.action === "filter") {
 
                       </p>
 
+
                     </div>
 
 
-                    {/* Date */}
+                    {/* DATE */}
 
                     <span className="mail-date">
 
                       {email.date
+
                         ? new Date(
                             email.date
                           ).toLocaleDateString()
-                        : ""}
+
+                        : ""
+
+                      }
 
                     </span>
+
 
                   </div>
 
                 )
+
               )}
 
             </div>
@@ -822,7 +1438,8 @@ if (data.action === "filter") {
 
           <aside className="assistant">
 
-            {/* Assistant Header */}
+
+            {/* ASSISTANT HEADER */}
 
             <div className="assistant-header">
 
@@ -835,7 +1452,7 @@ if (data.action === "filter") {
             </div>
 
 
-            {/* Assistant Body */}
+            {/* ASSISTANT BODY */}
 
             <div className="assistant-body">
 
@@ -858,7 +1475,7 @@ if (data.action === "filter") {
             </div>
 
 
-            {/* Assistant Input */}
+            {/* ASSISTANT INPUT */}
 
             <div className="assistant-input">
 
@@ -866,25 +1483,46 @@ if (data.action === "filter") {
                 type="text"
                 placeholder="Ask your assistant..."
                 value={assistantInput}
-                 onChange={(e) =>
-                   setAssistantInput(e.target.value)
-                 }
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                     handleAssistant();
-                  }
-                }}
-             />
 
-              <button onClick={handleAssistant}>
-                 Send
-             </button>
+                onChange={(e) =>
+                  setAssistantInput(
+                    e.target.value
+                  )
+                }
+
+                onKeyDown={(e) => {
+
+                  if (
+                    e.key === "Enter"
+                  ) {
+
+                    handleAssistant();
+
+                  }
+
+                }}
+
+              />
+
+
+              <button
+                onClick={
+                  handleAssistant
+                }
+              >
+
+                Send
+
+              </button>
 
             </div>
 
+
           </aside>
 
+
         </section>
+
 
       </main>
 
@@ -897,9 +1535,11 @@ if (data.action === "filter") {
 
         <div className="compose-overlay">
 
+
           <div className="compose-window">
 
-            {/* Compose Header */}
+
+            {/* HEADER */}
 
             <div className="compose-header">
 
@@ -907,10 +1547,14 @@ if (data.action === "filter") {
                 New Message
               </h2>
 
+
               <button
                 onClick={() => {
+
                   setShowCompose(false);
+
                   setSendMessage("");
+
                 }}
               >
 
@@ -927,9 +1571,11 @@ if (data.action === "filter") {
               type="email"
               placeholder="To"
               value={to}
+
               onChange={(e) =>
                 setTo(e.target.value)
               }
+
             />
 
 
@@ -939,9 +1585,13 @@ if (data.action === "filter") {
               type="text"
               placeholder="Subject"
               value={subject}
+
               onChange={(e) =>
-                setSubject(e.target.value)
+                setSubject(
+                  e.target.value
+                )
               }
+
             />
 
 
@@ -950,9 +1600,13 @@ if (data.action === "filter") {
             <textarea
               placeholder="Write your message..."
               value={body}
+
               onChange={(e) =>
-                setBody(e.target.value)
+                setBody(
+                  e.target.value
+                )
               }
+
             />
 
 
@@ -983,53 +1637,112 @@ if (data.action === "filter") {
 
             </button>
 
+
           </div>
+
 
         </div>
 
-            )}
+      )}
+
+
+      {/* ================================= */}
+      {/* EMAIL DETAIL */}
+      {/* ================================= */}
 
       {selectedEmail && (
+
         <div className="email-detail-overlay">
+
+
           <div className="email-detail-window">
 
+
+            {/* HEADER */}
+
             <div className="email-detail-header">
-              <button onClick={() => setSelectedEmail(null)}>
+
+              <button
+                onClick={() =>
+                  setSelectedEmail(null)
+                }
+              >
+
                 ← Back
+
               </button>
+
             </div>
+
+
+            {/* CONTENT */}
 
             <div className="email-detail-content">
 
+
               <h2>
-                {selectedEmail.subject || "(No subject)"}
+
+                {selectedEmail.subject ||
+                  "(No subject)"}
+
               </h2>
 
+
               <p>
-                <strong>From:</strong>{" "}
-                {selectedEmail.from || "Unknown sender"}
+
+                <strong>
+                  From:
+                </strong>{" "}
+
+                {selectedEmail.from ||
+                  "Unknown sender"}
+
               </p>
 
+
               {selectedEmail.to && (
+
                 <p>
-                  <strong>To:</strong> {selectedEmail.to}
+
+                  <strong>
+                    To:
+                  </strong>{" "}
+
+                  {selectedEmail.to}
+
                 </p>
+
               )}
+
 
               <hr />
 
+
               <p>
-              {selectedEmail.body || selectedEmail.snippet || ""}
+
+                {selectedEmail.body ||
+                  selectedEmail.snippet ||
+                  ""}
+
               </p>
+
 
             </div>
 
+
           </div>
+
+
         </div>
+
       )}
 
+
     </div>
+
   );
+
 }
+
 
 export default App;
